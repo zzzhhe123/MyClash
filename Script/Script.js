@@ -10,22 +10,22 @@ const excludeFilter =
 const regionDefinitions = [
   {
     name: '香港',
-    regex: /(?=.*(港|🇭🇰|HK|[Hh]ong\s*[Kk]ong))/u,
+    regex: /🇭🇰|港|\bhk\b|hong\s*kong/i,
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Hong_Kong.png',
   },
   {
     name: '日本',
-    regex: /^(?!.*免费)(?=.*(日本|🇯🇵|JP|[Jj]apan))/u,
+    regex: /^(🇯🇵|日本|\bjp\b|japan)(?!.*免费).*$/i,
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Japan.png',
   },
   {
     name: '美国',
-    regex: /(?=.*(美|🇺🇸|US|[Aa]merica|[Uu]nited\s*[Ss]tates))/u,
+    regex: /🇺🇸|美|\bus\b|america|united states/i,
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/United_States.png',
   },
   {
     name: '新加坡',
-    regex: /(?=.*(新加坡|狮城|🇸🇬|SG|[Ss]ingapore))/u,
+    regex: /🇸🇬|新加坡|狮城|\bsg\b|singapore/i,
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Singapore.png',
   },
   {
@@ -290,8 +290,8 @@ const serviceConfigs = [
   {
     key: 'adblock',
     name: '广告拦截',
+    proxyMode: 'reject',
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Advertising.png',
-    reject: true,
   },
 ];
 
@@ -299,91 +299,50 @@ const serviceConfigs = [
 
 function main(config) {
   // 排除匹配到的节点
-  if (config.proxies && Array.isArray(config.proxies)) {
+  if (Array.isArray(config.proxies)) {
     config.proxies = config.proxies.filter(
       (proxy) => !excludeFilter.test(proxy.name),
     );
   }
 
   // 获取节点列表
-  const proxies = config?.proxies || [];
+  const proxies = config.proxies || [];
   if (!proxies.length) {
     throw new Error('配置文件中未找到任何节点');
   }
 
-  // 节点分类
-  const regionGroups = {};
-  regionDefinitions.forEach(
-    (r) =>
-      (regionGroups[r.name] = {
-        ...r,
-        proxies: [],
-      }),
-  );
+  // --- 构建地区组和倍率组 ---
 
-  const lowGroup = regionGroups['低倍率节点'];
-  const highGroup = regionGroups['高倍率节点'];
+  const regionGroups = Object.fromEntries(
+    regionDefinitions.map((r) => [r.name, { ...r, proxies: [] }]),
+  );
   const otherProxies = [];
 
-  let lowRegion;
-  let highRegion;
-  const normalRegions = [];
-
-  // 预处理地区配置
-  for (const region of regionDefinitions) {
-    switch (region.name) {
-      case '低倍率节点':
-        lowRegion = region;
-        break;
-
-      case '高倍率节点':
-        highRegion = region;
-        break;
-
-      default:
-        normalRegions.push(region);
-        break;
-    }
-  }
-
   for (const proxy of proxies) {
-    const name = proxy.name;
     let matched = false;
 
-    // 节点分类（倍率）
-    if (lowRegion.regex.test(name)) {
-      lowGroup.proxies.push(name);
-    }
-    if (highRegion.regex.test(name)) {
-      highGroup.proxies.push(name);
-    }
+    for (const region of regionDefinitions) {
+      if (region.regex.test(proxy.name)) {
+        regionGroups[region.name].proxies.push(proxy.name);
 
-    // 节点分类（地区）
-    for (const region of normalRegions) {
-      if (region.regex.test(name)) {
-        regionGroups[region.name].proxies.push(name);
-        matched = true;
-        break;
+        // 如果匹配到的是地区组（非倍率组），则标记为已分类
+        if (region.name !== '低倍率节点' && region.name !== '高倍率节点') {
+          matched = true;
+        }
       }
     }
 
-    // 未分类的归为其他节点
+    // 未匹配到地区组（不包含倍率组）的归为其他节点
     if (!matched) {
-      otherProxies.push(name);
+      otherProxies.push(proxy.name);
     }
   }
 
-  // 构建地区策略组
-  const generatedRegionGroups = [];
-  regionDefinitions.forEach((r) => {
-    const groupData = regionGroups[r.name];
-
-    if (groupData.proxies.length > 0) {
-      generatedRegionGroups.push(
-        ...createRegionGroup(r.name, r.icon, groupData.proxies),
-      );
-    }
-  });
+  const generatedRegionGroups = regionDefinitions
+    .filter((r) => regionGroups[r.name].proxies.length > 0)
+    .flatMap((r) =>
+      createRegionGroup(r.name, r.icon, regionGroups[r.name].proxies),
+    );
 
   if (otherProxies.length > 0) {
     generatedRegionGroups.push(
@@ -394,6 +353,8 @@ function main(config) {
       ),
     );
   }
+
+  // --- 构建分流策略组 ---
 
   // 筛选类型为 select 的策略组
   const groupNamesOfSelect = generatedRegionGroups
@@ -409,19 +370,19 @@ function main(config) {
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Proxy.png',
   });
 
-  serviceConfigs.forEach((svc) => {
-    let groupProxies = ['代理', ...groupNamesOfSelect];
-    if (svc.reject) {
-      groupProxies = ['REJECT', 'REJECT-DROP', 'PASS'];
-    }
+  const proxyModes = {
+    default: ['代理', ...groupNamesOfSelect],
+    reject: ['REJECT', 'REJECT-DROP', 'PASS'],
+  };
 
+  for (const svc of serviceConfigs) {
     functionalGroups.push({
       ...selectBaseOption,
       name: svc.name,
       icon: svc.icon,
-      proxies: groupProxies,
+      proxies: proxyModes[svc.proxyMode || 'default'],
     });
-  });
+  }
 
   // 添加其他策略组
   functionalGroups.push({
@@ -433,14 +394,13 @@ function main(config) {
   });
 
   // 构建 GLOBAL 全局策略组
-  const allGroupNames = [
-    ...functionalGroups.map((g) => g.name),
-    ...generatedRegionGroups.map((g) => g.name),
-  ];
   const globalGroup = {
     ...selectBaseOption,
     name: 'GLOBAL',
-    proxies: allGroupNames,
+    proxies: [
+      ...functionalGroups.map((g) => g.name),
+      ...generatedRegionGroups.map((g) => g.name),
+    ],
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Global.png',
   };
 
@@ -540,32 +500,6 @@ function main(config) {
     // 屏蔽哔哩哔哩PCDN，解决访问视频卡顿问题
     '+.mcdn.bilivideo.com': ['0.0.0.0'],
     '+.mcdn.bilivideo.cn': ['0.0.0.0'],
-  };
-
-  config['sniffer'] = {
-    enable: false,
-    'force-dns-mapping': true,
-    'parse-pure-ip': true,
-    'override-destination': false,
-    sniff: {
-      HTTP: {
-        ports: [80, '8080-8880'],
-        'override-destination': true,
-      },
-      TLS: {
-        ports: [443, 8443],
-      },
-      QUIC: {
-        ports: [443, 8443],
-      },
-    },
-    'skip-domain': [
-      'Mijia Cloud',
-      '+.oray.com',
-      '+.push.apple.com',
-      'cloudflare-ech.com',
-    ],
-    'skip-dst-address': ['rule-set:telegram_ip'],
   };
 
   config['ntp'] = {
