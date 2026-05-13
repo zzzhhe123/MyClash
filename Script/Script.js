@@ -27,27 +27,27 @@ const excludeFilter =
 const regionDefinitions = [
   {
     name: '香港',
-    regex: /🇭🇰|港|\bhk\b|hong\s*kong/i,
+    regex: /🇭🇰|港|HK|[Hh]ong\s*[Kk]ong/,
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Hong_Kong.png',
   },
   {
     name: '日本',
-    regex: /^(🇯🇵|日本|\bjp\b|japan)(?!.*免费).*$/i,
+    regex: /^(🇯🇵|日本|JP|[Jj]apan)(?!.*免费).*$/,
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Japan.png',
   },
   {
     name: '美国',
-    regex: /🇺🇸|美|\bus\b|america|united states/i,
+    regex: /🇺🇸|美|US|[Aa]merica|[Uu]nited\s*[Ss]tates/,
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/United_States.png',
   },
   {
     name: '新加坡',
-    regex: /🇸🇬|新加坡|狮城|\bsg\b|singapore/i,
+    regex: /🇸🇬|新加坡|狮城|SG|[Ss]ingapore/,
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Singapore.png',
   },
   {
     name: '低倍率节点',
-    regex: /^(?!.*(?:剩|期|客户端|软件)).*(?:(?<!\d)0\.[0-5]|下载|低倍)/u,
+    regex: /^(?!.*(?:剩|期|客户端|软件)).*(?:(?<!\d)0\.[0-5]|下载|低倍)/,
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Available_1.png',
   },
   {

@@ -515,51 +515,51 @@ proxy-groups:
     <<: *group_common_select
     include-all: true
     proxies: ['香港-自动选择']
-    filter: '(?=.*(港|🇭🇰|HK|[Hh]ong\s*[Kk]ong))'
+    filter: '🇭🇰|港|HK|[Hh]ong\s*[Kk]ong'
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Hong_Kong.png'
   - name: '香港-自动选择'
     <<: *group_common_auto
-    filter: '(?=.*(港|🇭🇰|HK|[Hh]ong\s*[Kk]ong))'
+    filter: '🇭🇰|港|HK|[Hh]ong\s*[Kk]ong'
 
   - name: '日本'
     <<: *group_common_select
     include-all: true
     proxies: ['日本-自动选择']
-    filter: '(?=.*(日本|🇯🇵|JP|[Jj]apan))'
+    filter: '🇯🇵|日本|JP|[Jj]apan'
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Japan.png'
   - name: '日本-自动选择'
     <<: *group_common_auto
-    filter: '(?=.*(日本|🇯🇵|JP|[Jj]apan))'
+    filter: '🇯🇵|日本|JP|[Jj]apan'
 
   - name: '美国'
     <<: *group_common_select
     include-all: true
     proxies: ['美国-自动选择']
-    filter: '(?=.*(美|🇺🇸|US|[Aa]merica|[Uu]nited\s*[Ss]tates))'
+    filter: '🇺🇸|美|US|[Aa]merica|[Uu]nited\s*[Ss]tates'
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/United_States.png'
   - name: '美国-自动选择'
     <<: *group_common_auto
-    filter: '(?=.*(美|🇺🇸|US|[Aa]merica|[Uu]nited\s*[Ss]tates))'
+    filter: '🇺🇸|美|US|[Aa]merica|[Uu]nited\s*[Ss]tates'
 
   - name: '新加坡'
     <<: *group_common_select
     include-all: true
     proxies: ['新加坡-自动选择']
-    filter: '(?=.*(新加坡|狮城|🇸🇬|SG|[Ss]ingapore))'
+    filter: '🇸🇬|新加坡|狮城|SG|[Ss]ingapore'
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Singapore.png'
   - name: '新加坡-自动选择'
     <<: *group_common_auto
-    filter: '(?=.*(新加坡|狮城|🇸🇬|SG|[Ss]ingapore))'
+    filter: '🇸🇬|新加坡|狮城|SG|[Ss]ingapore'
 
   - name: '台湾省'
     <<: *group_common_select
     include-all: true
     proxies: ['台湾省-自动选择']
-    filter: '(?=.*(台湾|🇹🇼|TW|[Tt]ai\s*[Ww]an))'
+    filter: '🇹🇼|台湾|TW|[Tt]aiwan'
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Taiwan.png'
   - name: '台湾省-自动选择'
     <<: *group_common_auto
-    filter: '(?=.*(台湾|🇹🇼|TW|[Tt]ai\s*[Ww]an))'
+    filter: '🇹🇼|台湾|TW|[Tt]aiwan'
 
   - name: '低倍率节点'
     <<: *group_common_select
@@ -570,18 +570,18 @@ proxy-groups:
   - name: '高倍率节点'
     <<: *group_common_select
     include-all: true
-    filter: '(?:[*×xX✕✖⨉]\s*(?:[2-9]\d*|[1-9]\d+)(?:\.\d+)?)|(?:(?<![\d.])(?:[2-9]\d*|[1-9]\d+)(?:\.\d+)?\s*(?:倍|[*×xX✕✖⨉]))'
+    filter: '(?u)(?:[*×xX✕✖⨉]\s*(?:[2-9]\d*|[1-9]\d+)(?:\.\d+)?)|(?:(?<![\d.])(?:[2-9]\d*|[1-9]\d+)(?:\.\d+)?\s*(?:倍|[*×xX✕✖⨉]))'
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Airport.png'
 
   - name: '其他节点'
     <<: *group_common_select
     include-all: true
     proxies: ['其他节点-自动选择']
-    exclude-filter: '(?i)港|HK|🇭🇰|日本|JP|🇯🇵|美|US|🇺🇸|新加坡|SG|🇸🇬|台湾|TW|🇹🇼|直连'
+    exclude-filter: '港|HK|🇭🇰|日本|JP|🇯🇵|美|US|🇺🇸|新加坡|SG|🇸🇬|台湾|TW|🇹🇼|直连'
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/World_Map.png'
   - name: '其他节点-自动选择'
     <<: *group_common_auto
-    exclude-filter: '(?i)港|HK|🇭🇰|日本|JP|🇯🇵|美|US|🇺🇸|新加坡|SG|🇸🇬|台湾|TW|🇹🇼|直连'
+    exclude-filter: '港|HK|🇭🇰|日本|JP|🇯🇵|美|US|🇺🇸|新加坡|SG|🇸🇬|台湾|TW|🇹🇼|直连'
 
 # --- 路由规则 (Rules) ---
 rules:
