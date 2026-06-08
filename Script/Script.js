@@ -311,6 +311,9 @@ function createRegionGroup(name, icon, proxies) {
 // --- 主入口 ---
 
 function main(config) {
+  // 移除已废弃的属性
+  delete config['global-client-fingerprint'];
+
   // 排除匹配到的节点
   if (Array.isArray(config.proxies)) {
     config.proxies = config.proxies.filter(
