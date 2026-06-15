@@ -1,140 +1,292 @@
-# MyClash
+/**
+ * mihomo配置覆写脚本（全量修复优化最终版）
+ * 核心重构：路由闭环、DNS并发优化、连接嗅探、底层耗电控制、防语法错误解析
+ */
 
-Mihomo（Clash Meta）配置文件和覆写脚本，分别提供全量版和精简版，无DNS泄露（图一乐），内置多项分流策略、地区策略，实现全局排除节点、自动识别节点倍率等功能
+const ruleOptionsEnable = {
+  ai: true, youtube: true, googlefcm: true, google: true, github: true,
+  microsoft: true, apple: true, telegram: true, twitter: true, instagram: true,
+  steam: true, cloudflare: true, pixiv: true, emby: true, spotify: true,
+  tiktok: true, netflix: true, adblock: true,
+};
 
-友情推荐，非常好用、省电且内存占用低的代理软件：[Bettbox](https://github.com/appshubcc/Bettbox)
+const regionDefinitionsEnable = {
+  香港: true, 日本: true, 美国: true, 新加坡: true, 台湾省: true,
+  低倍率节点: true, 高倍率节点: true,
+};
 
-## 配置文件
+const excludeFilterEnable = true;
+const excludeFilter = /群|返利|循环|官网|客服|网站|网址|获取|订阅|流量|到期|机场|下次|版本|官址|备用|过期|已用|联系|邮箱|工单|贩卖|通知|倒卖|防止|国内|地址|频道|无法|说明|使用|提示|特别|访问|支持|教程|关注|更新|作者|加入|超时|收藏|福利|邀请|好友|失联|选择|剩余|公益|发布|DIZTNA|通路|登录|禁止|定时|渠道|牢记|永久|余额|阁下|本站|刷新|导航|⚠️|@|Expire|http|com/u;
 
-> - _配置文件实现的效果和脚本基本一致_
-> - _不支持自定义 **启用/禁用** 策略组_
-> - _无法像脚本那样实现不生成未匹配到节点的策略组_
+const rules = [
+  // PCDN与广告强拒绝 (替代原hosts劫持，降低移动端重试功耗)
+  'DOMAIN-SUFFIX,mcdn.bilivideo.com,REJECT',
+  'DOMAIN-SUFFIX,mcdn.bilivideo.cn,REJECT',
+  'DOMAIN-KEYWORD,mcdn.bili,REJECT',
+  
+  // 私有网络直连
+  'RULE-SET,private,直连',
+  'RULE-SET,private_ip,直连,no-resolve',
 
-- [mihomoConfig.yaml（全量版）](/Config/mihomoConfig.yaml)
+  // 进程规则
+  'RULE-SET,DownloadApps,直连',
 
-- [mihomoConfigLite.yaml（精简版）](/Config/mihomoConfigLite.yaml)
+  // 国内直连
+  'RULE-SET,games_cn,直连',
+  'RULE-SET,epicgames,直连',
+  'RULE-SET,nvidia_cn,直连',
+  'RULE-SET,cloudflare_cn,直连',
+  'RULE-SET,apple_cn,直连',
+  'DOMAIN,fsend.cn,直连',
+];
 
-## 覆写脚本
+const regionDefinitions = [
+  { name: '香港', regex: /🇭🇰|港|HK|[Hh]ong\s*[Kk]ong/, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Hong_Kong.png' },
+  { name: '日本', regex: /🇯🇵|日本|JP|[Jj]apan/, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Japan.png' },
+  { name: '美国', regex: /🇺🇸|美|US|[Aa]merica|[Uu]nited\s*[Ss]tates/, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/United_States.png' },
+  { name: '新加坡', regex: /🇸🇬|新加坡|狮城|SG|[Ss]ingapore/, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Singapore.png' },
+  { name: '台湾省', regex: /🇹🇼|台湾|TW|[Tt]aiwan/, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Taiwan.png' },
+  { name: '低倍率节点', regex: /^(?!.*(?:剩|期|客户端|软件)).*(?:(?<!\d)0\.[0-5]|下载|低倍)/, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Available_1.png' },
+  { name: '高倍率节点', regex: /(?:[*×xX✕✖⨉]\s*(?:[2-9]\d*|[1-9]\d+)(?:\.\d+)?)|(?:(?<![\d.])(?:[2-9]\d*|[1-9]\d+)(?:\.\d+)?\s*(?:倍|[*×xX✕✖⨉]))/u, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Airport.png' },
+];
 
-### 使用方式
+const ruleProviderFormatMrs = { format: 'mrs' };
+const ruleProviderCommonDomain = { type: 'http', interval: 86400, behavior: 'domain' };
+const ruleProviderCommonIpcidr = { type: 'http', interval: 86400, behavior: 'ipcidr' };
+const ruleProviderCommonClassical = { type: 'http', interval: 86400, behavior: 'classical' };
 
-> [!IMPORTANT]
-> **注意⚠️：该脚本仅适用于覆写机场提供的配置文件，请勿用于覆写自己编写的配置文件**
+const baseRuleProviders = {
+  DownloadApps: { ...ruleProviderCommonClassical, format: 'text', url: 'https://fastly.jsdelivr.net/gh/AIsouler/MyClash@main/Rules/DownloadApps.txt', path: './ruleset/DownloadApps.txt' },
+  fakeip_filter: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/wwqgtxx/clash-rules@release/fakeip-filter.mrs', path: './ruleset/fakeip-filter.mrs' },
+  epicgames: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/epicgames.mrs', path: './ruleset/epicgames.mrs', 'path-in-bundle': 'geo/geosite/epicgames.mrs' },
+  nvidia_cn: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/nvidia@cn.mrs', path: './ruleset/nvidia@cn.mrs', 'path-in-bundle': 'geo/geosite/nvidia@cn.mrs' },
+  games_cn: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-games@cn.mrs', path: './ruleset/category-games@cn.mrs', 'path-in-bundle': 'geo/geosite/category-games@cn.mrs' },
+  private: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/private.mrs', path: './ruleset/private.mrs', 'path-in-bundle': 'geo/geosite/private.mrs' },
+  private_ip: { ...ruleProviderCommonIpcidr, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/private.mrs', path: './ruleset/private_ip.mrs', 'path-in-bundle': 'geo/geoip/private.mrs' },
+  gfw: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/gfw.mrs', path: './ruleset/gfw.mrs', 'path-in-bundle': 'geo/geosite/gfw.mrs' },
+  cn_additional: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://static-file-global.353355.xyz/rules/cn-additional-list.mrs', path: './ruleset/cn-additional-list.mrs' },
+  cn: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/wwqgtxx/clash-rules@release/direct.mrs', path: './ruleset/cn.mrs' },
+  cn_ip: { ...ruleProviderCommonIpcidr, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/cn.mrs', path: './ruleset/cn_ip.mrs', 'path-in-bundle': 'geo/geoip/cn.mrs' },
+  cloudflare_cn: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/cloudflare@cn.mrs', path: './ruleset/cloudflare_cn.mrs', 'path-in-bundle': 'geo/geosite/cloudflare@cn.mrs' },
+  apple_cn: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/apple@cn.mrs', path: './ruleset/apple@cn.mrs', 'path-in-bundle': 'geo/geosite/apple@cn.mrs' },
+};
 
-#### 通过链接导入
+const groupBaseOption = { interval: 600, timeout: 3000, url: 'https://g.cn/generate_204', lazy: true, 'max-failed-times': 3 };
+const selectBaseOption = { ...groupBaseOption, type: 'select', hidden: false };
+const urlTestBaseOption = { ...groupBaseOption, type: 'url-test', tolerance: 50, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Auto.png', hidden: true };
+const loadBalanceBaseOption = { ...groupBaseOption, type: 'load-balance', strategy: 'sticky-sessions', icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Round_Robin.png', hidden: true };
 
-复制以下任意一个脚本链接后按如图所示步骤导入到代理客户端，以 [Bettbox](https://github.com/appshubcc/Bettbox) 为例
+const serviceConfigs = [
+  { key: 'ai', name: 'AI', providers: { ai: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-ai-!cn.mrs', path: './ruleset/ai.mrs', 'path-in-bundle': 'geo/geosite/category-ai-!cn.mrs' } }, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/ChatGPT.png', rules: ['RULE-SET,ai,AI'] },
+  { key: 'youtube', name: 'YouTube', providers: { youtube: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/youtube.mrs', path: './ruleset/youtube.mrs', 'path-in-bundle': 'geo/geosite/youtube.mrs' } }, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/YouTube.png', rules: ['AND,((NETWORK,UDP),(DST-PORT,443),(RULE-SET,youtube)),REJECT', 'RULE-SET,youtube,YouTube'] },
+  { key: 'googlefcm', name: 'FCM', proxyMode: 'directfirst', providers: { googlefcm: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/googlefcm.mrs', path: './ruleset/googlefcm.mrs', 'path-in-bundle': 'geo/geosite/googlefcm.mrs' } }, icon: 'https://fastly.jsdelivr.net/gh/MiToverG422/Qure@master/IconSet/Color/fcm.png', rules: ['RULE-SET,googlefcm,FCM'] },
+  { key: 'google', name: 'Google', providers: { google: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/google.mrs', path: './ruleset/google.mrs', 'path-in-bundle': 'geo/geosite/google.mrs' }, google_ip: { ...ruleProviderCommonIpcidr, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/google.mrs', path: './ruleset/google_ip.mrs', 'path-in-bundle': 'geo/geoip/google.mrs' } }, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Google_Search.png', rules: ['RULE-SET,google,Google', 'RULE-SET,google_ip,Google,no-resolve'] },
+  { key: 'github', name: 'GitHub', providers: { github: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/github.mrs', path: './ruleset/github.mrs', 'path-in-bundle': 'geo/geosite/github.mrs' } }, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/GitHub.png', rules: ['RULE-SET,github,GitHub'] },
+  { key: 'microsoft', name: 'Microsoft', proxyMode: 'direct', providers: { microsoft: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/microsoft.mrs', path: './ruleset/microsoft.mrs', 'path-in-bundle': 'geo/geosite/microsoft.mrs' } }, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Microsoft.png', rules: ['RULE-SET,microsoft,Microsoft'] },
+  { key: 'apple', name: 'Apple', proxyMode: 'direct', providers: { apple: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/apple.mrs', path: './ruleset/apple.mrs', 'path-in-bundle': 'geo/geosite/apple.mrs' } }, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Apple.png', rules: ['RULE-SET,apple,Apple'] },
+  { key: 'telegram', name: 'Telegram', providers: { telegram: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/telegram.mrs', path: './ruleset/telegram.mrs', 'path-in-bundle': 'geo/geosite/telegram.mrs' }, telegram_ip: { ...ruleProviderCommonIpcidr, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/telegram.mrs', path: './ruleset/telegram_ip.mrs', 'path-in-bundle': 'geo/geoip/telegram.mrs' } }, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Telegram.png', rules: ['RULE-SET,telegram,Telegram', 'RULE-SET,telegram_ip,Telegram,no-resolve'] },
+  { key: 'cloudflare', name: 'Cloudflare', providers: { cloudflare: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/cloudflare.mrs', path: './ruleset/cloudflare.mrs', 'path-in-bundle': 'geo/geosite/cloudflare.mrs' }, cloudflare_ip: { ...ruleProviderCommonIpcidr, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/cloudflare.mrs', path: './ruleset/cloudflare_ip.mrs', 'path-in-bundle': 'geo/geoip/cloudflare.mrs' } }, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Cloudflare.png', rules: ['RULE-SET,cloudflare,Cloudflare', 'RULE-SET,cloudflare_ip,Cloudflare,no-resolve'] },
+  { key: 'pixiv', name: 'Pixiv', providers: { pixiv: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/pixiv.mrs', path: './ruleset/pixiv.mrs', 'path-in-bundle': 'geo/geosite/pixiv.mrs' } }, icon: 'https://play-lh.googleusercontent.com/Ls9opXo6-wfEWmbBU8heJaFS8HwWydssWE1J3vexIGvkF-UJDqcW7ZMD8w6dQABfygONd4z3Yt4TfRDZAPYq=w480-h960-rw', rules: ['RULE-SET,pixiv,Pixiv', 'PROCESS-NAME,com.perol.pixez,Pixiv', 'PROCESS-NAME,com.perol.play.pixez,Pixiv'] },
+  { key: 'steam', name: 'Steam', providers: { steam: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/steam.mrs', path: './ruleset/steam.mrs', 'path-in-bundle': 'geo/geosite/steam.mrs' } }, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Steam.png', rules: ['RULE-SET,steam,Steam'] },
+  { key: 'twitter', name: 'Twitter', providers: { twitter: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/twitter.mrs', path: './ruleset/twitter.mrs', 'path-in-bundle': 'geo/geosite/twitter.mrs' }, twitter_ip: { ...ruleProviderCommonIpcidr, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/twitter.mrs', path: './ruleset/twitter_ip.mrs', 'path-in-bundle': 'geo/geoip/twitter.mrs' } }, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Twitter.png', rules: ['RULE-SET,twitter,Twitter', 'RULE-SET,twitter_ip,Twitter,no-resolve'] },
+  { key: 'instagram', name: 'Instagram', providers: { instagram: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/instagram.mrs', path: './ruleset/instagram.mrs', 'path-in-bundle': 'geo/geosite/instagram.mrs' } }, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Instagram.png', rules: ['RULE-SET,instagram,Instagram'] },
+  { key: 'emby', name: 'Emby', providers: { emby: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/666OS/rules@release/mihomo/domain/Emby.mrs', path: './ruleset/emby.mrs' }, emby_ip: { ...ruleProviderCommonIpcidr, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/666OS/rules@release/mihomo/ip/Emby.mrs', path: './ruleset/emby_ip.mrs' } }, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Emby.png', rules: ['RULE-SET,emby,Emby', 'RULE-SET,emby_ip,Emby,no-resolve', 'DOMAIN-KEYWORD,emby,Emby'] },
+  { key: 'spotify', name: 'Spotify', proxyMode: 'direct', providers: { spotify: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/spotify.mrs', path: './ruleset/spotify.mrs', 'path-in-bundle': 'geo/geosite/spotify.mrs' } }, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Spotify.png', rules: ['RULE-SET,spotify,Spotify'] },
+  { key: 'tiktok', name: 'TikTok', providers: { tiktok: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/tiktok.mrs', path: './ruleset/tiktok.mrs', 'path-in-bundle': 'geo/geosite/tiktok.mrs' } }, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/TikTok.png', rules: ['RULE-SET,tiktok,TikTok'] },
+  { key: 'netflix', name: 'Netflix', providers: { netflix: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/netflix.mrs', path: './ruleset/netflix.mrs', 'path-in-bundle': 'geo/geosite/netflix.mrs' }, netflix_ip: { ...ruleProviderCommonIpcidr, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/netflix.mrs', path: './ruleset/netflix_ip.mrs', 'path-in-bundle': 'geo/geoip/netflix.mrs' } }, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Netflix.png', rules: ['RULE-SET,netflix,Netflix', 'RULE-SET,netflix_ip,Netflix,no-resolve'] },
+  { key: 'adblock', name: '广告拦截', proxyMode: 'reject', providers: { adblockmihomolite: { ...ruleProviderCommonDomain, ...ruleProviderFormatMrs, url: 'https://fastly.jsdelivr.net/gh/217heidai/adblockfilters@main/rules/adblockmihomolite.mrs', path: './ruleset/adblockmihomolite.mrs' } }, icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Advertising.png', rules: ['RULE-SET,adblockmihomolite,广告拦截'] },
+];
 
-- 全量版（包含全部分流策略组）
+function createRegionGroup(name, icon, proxies) {
+  const autoTestName = `${name}-自动选择`;
+  const loadBalanceName = `${name}-负载均衡`;
+  return [
+    { ...urlTestBaseOption, name: autoTestName, proxies },
+    { ...loadBalanceBaseOption, name: loadBalanceName, proxies },
+    { ...selectBaseOption, name, icon, proxies: [...proxies, autoTestName, loadBalanceName] },
+  ];
+}
 
-```txt
-https://raw.githubusercontent.com/AIsouler/MyClash/refs/heads/main/Script/mihomoScript.js
-```
+function main(config) {
+  delete config['global-client-fingerprint'];
 
-- 精简版（仅包含小部分分流策略组）
+  if (excludeFilterEnable && Array.isArray(config.proxies)) {
+    config.proxies = config.proxies.filter(proxy => !excludeFilter.test(proxy.name));
+  }
 
-```txt
-https://raw.githubusercontent.com/AIsouler/MyClash/refs/heads/main/Script/Script.js
-```
+  const proxies = config.proxies || [];
+  const allDirectOrReject = proxies.every((p) => {
+    const type = p.type?.toLowerCase();
+    return type === 'direct' || type === 'reject';
+  });
 
-|                                                                                   |
-| --------------------------------------------------------------------------------- |
-| ![img](https://raw.githubusercontent.com/AIsouler/MyClash/main/Image/import.webp) |
+  if (!proxies.length || allDirectOrReject) {
+    throw new Error('配置文件中未找到任何代理节点，请使用机场提供的配置文件进行覆写');
+  }
 
-#### 通过复制代码导入
+  const enabledDefinitions = regionDefinitions.filter(r => regionDefinitionsEnable[r.name] === true);
+  const regionGroups = Object.fromEntries(enabledDefinitions.map(r => [r.name, { ...r, proxies: [] }]));
+  const otherProxies = [];
 
-部分代理客户端不支持链接导入，可以点击以下链接后复制脚本完整代码再导入到代理客户端
+  for (const proxy of proxies) {
+    let matched = false;
+    for (const region of enabledDefinitions) {
+      if (region.regex.test(proxy.name)) {
+        regionGroups[region.name].proxies.push(proxy.name);
+        if (region.name !== '低倍率节点' && region.name !== '高倍率节点') matched = true;
+      }
+    }
+    if (!matched) otherProxies.push(proxy.name);
+  }
 
-点击以下链接即可查看脚本代码
+  const generatedRegionGroups = enabledDefinitions
+    .filter(r => regionGroups[r.name].proxies.length > 0)
+    .flatMap(r => createRegionGroup(r.name, r.icon, regionGroups[r.name].proxies));
 
-[mihomoScript.js（全量版）](/Script/mihomoScript.js)
+  if (otherProxies.length > 0) {
+    generatedRegionGroups.push(...createRegionGroup('其他节点', 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/World_Map.png', otherProxies));
+  }
 
-[Script.js（精简版）](/Script/Script.js)
+  const functionalGroups = [];
+  const finalRules = [...rules];
+  const finalRuleProviders = { ...baseRuleProviders };
 
-## 配置和脚本说明
+  const groupNamesOfSelect = generatedRegionGroups.filter(g => g.type === 'select').map(g => g.name);
 
-- 仅适用于使用 [mihomo 内核](https://github.com/MetaCubeX/mihomo/tree/Alpha) 的代理客户端
+  const proxyModes = {
+    default: ['默认代理', '自动选择', '负载均衡', ...groupNamesOfSelect],
+    direct: ['默认代理', '直连', '自动选择', '负载均衡', ...groupNamesOfSelect],
+    directfirst: ['直连', '默认代理', '自动选择', '负载均衡', ...groupNamesOfSelect],
+    reject: ['REJECT', 'REJECT-DROP', 'PASS'],
+  };
 
-- 脚本仅适用于覆写机场提供的配置文件，请勿用于覆写自己编写的配置文件
+  functionalGroups.push(
+    { ...selectBaseOption, name: '默认代理', proxies: [...groupNamesOfSelect, '自动选择', '负载均衡'], icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Proxy.png' },
+    { ...urlTestBaseOption, name: '自动选择', 'include-all': true, 'exclude-type': 'DIRECT' },
+    { ...loadBalanceBaseOption, name: '负载均衡', 'include-all': true, 'exclude-type': 'DIRECT' }
+  );
 
-- 全量版脚本内策略组、节点组均支持自定义是否启用（默认启用）
+  for (const svc of serviceConfigs) {
+    if (!ruleOptionsEnable[svc.key]) continue;
+    finalRules.push(...svc.rules);
+    const providers = svc.providers || {};
+    for (const [providerName, providerConfig] of Object.entries(providers)) {
+      finalRuleProviders[providerName] = providerConfig;
+    }
+    functionalGroups.push({ ...selectBaseOption, name: svc.name, icon: svc.icon, proxies: [...proxyModes[svc.proxyMode || 'default']] });
+  }
 
-- 内置的DNS配置已解决DNS泄露问题（图一乐），建议不要开启代理软件的DNS覆写
+  functionalGroups.push({
+    ...selectBaseOption, name: '直连', proxies: ['🇨🇳 直连 | IPv4优先', '🇨🇳 直连 | IPv6优先', '🇨🇳 直连 | 双栈'],
+    url: 'https://connectivitycheck.platform.hicloud.com/generate_204', icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/China_Map.png',
+  });
 
-- 规则采用 `rule-set` 模式，按需添加规则集，告别臃肿的 geodata，减少内存占用
+  const globalGroup = {
+    ...selectBaseOption, name: 'GLOBAL',
+    proxies: [...functionalGroups.map(g => g.name), ...generatedRegionGroups.map(g => g.name)],
+    icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Global.png',
+  };
 
-- 规则以 `domain` 与 `ipcidr` 行为为主，相比 `classical` 查询效率更高
+  const chinaDNS = ['https://dns.alidns.com/dns-query#DIRECT', 'https://doh.pub/dns-query#DIRECT'];
+  const foreignDNS = ['https://dns.cloudflare.com/dns-query#默认代理', 'https://dns.google/dns-query#默认代理'];
 
-- 自动排除非国家或地区的信息节点，可自定义是否启用（默认启用）
+  const originalDns = config.dns || {};
+  const commonDnsRegex = /(223\.5\.5\.5|223\.6\.6\.6|119\.29\.29\.29|114\.114\.114\.114|180\.76\.76\.76|1\.1\.1\.1|1\.0\.0\.1|8\.8\.8\.8|8\.8\.4\.4|alidns|doh\.pub|dot\.pub|dns\.baidu|dns\.google|cloudflare)/i;
+  const subscriptionProxyServerNameserver = (originalDns['proxy-server-nameserver'] || []).filter(dns => !commonDnsRegex.test(String(dns)));
+  const subscriptionProxyServerNameserverPolicy = originalDns['proxy-server-nameserver-policy'] || {};
 
-- 自动识别节点倍率，并分别归类为独立节点组：
-  - 高倍率节点（倍率 ≥2）
-  - 低倍率节点（倍率 ≤0.5）
+  // 核心特性注入：连接嗅探器
+  config['sniffer'] = {
+    enable: true,
+    'force-domain': ['+.v2ex.com'],
+    skip: ['Mijia Cloud', '*.local'],
+    sniff: {
+      HTTP: { ports: [80, '8080-8880'], 'override-destination': true },
+      TLS: { ports: [443, 8443] },
+      QUIC: { ports: [443, 8443] }
+    }
+  };
 
-## 内置策略组
+  config['dns'] = {
+    enable: true,
+    ipv6: true,
+    listen: ':1053',
+    'cache-algorithm': 'arc',
+    'use-hosts': true,
+    'use-system-hosts': true,
+    'enhanced-mode': 'fake-ip',
+    'fake-ip-range': '198.18.0.1/16',
+    'fake-ip-range-v6': 'fc00::/18',
+    'fake-ip-filter': ['rule-set:private', 'rule-set:fakeip_filter'],
+    'proxy-server-nameserver': [...chinaDNS, ...subscriptionProxyServerNameserver],
+    'proxy-server-nameserver-policy': { ...subscriptionProxyServerNameserverPolicy },
+    'default-nameserver': ['223.5.5.5', '119.29.29.29'],
+    nameserver: [...foreignDNS],
+    'nameserver-policy': {
+      'rule-set:cn': [...chinaDNS], // 修复对 geosite 的强依赖
+    },
+    'direct-nameserver': ['system', '223.5.5.5', '119.29.29.29'],
+  };
 
-> - _若不需要某个分流策略组，可在脚本中将 `ruleOptionsEnable` 对应值设为 `false`_
+  config.proxies.push(
+    { name: '🇨🇳 直连 | IPv4优先', type: 'direct', 'ip-version': 'ipv4-prefer' },
+    { name: '🇨🇳 直连 | IPv6优先', type: 'direct', 'ip-version': 'ipv6-prefer' },
+    { name: '🇨🇳 直连 | 双栈', type: 'direct' }
+  );
 
-- `默认代理`
-- `自动选择`
-- `负载均衡`
-- `AI`
-- `YouTube`
-- `FCM`
-- `Google`
-- `GitHub`
-- `Microsoft`
-- `Apple`
-- `Telegram`
-- `Cloudflare`
-- `Pixiv`
-- `Steam`
-- `Twitter`
-- `Instagram`
-- `Emby`
-- `Spotify`
-- `TikTok`
-- `Netflix`
-- `广告拦截`
-- `直连` （可自定义IP优先级，建议使用 `IPv4优先`，防止出现一些问题）
+  config['proxy-groups'] = [globalGroup, ...functionalGroups, ...generatedRegionGroups];
+  config['rule-providers'] = finalRuleProviders;
 
-## 内置节点组
+  config['allow-lan'] = true;
+  config['ipv6'] = true;
+  config['bind-address'] = '*';
+  config['unified-delay'] = true;
+  config['tcp-concurrent'] = true;
+  config['keep-alive-idle'] = 600;
+  config['keep-alive-interval'] = 60;
+  config['find-process-mode'] = 'strict';
 
-> - _所有组均为手动选择（select），内部包含对应的自动选择策略组和负载均衡策略组_
-> - _若不需要某个节点组，可在脚本中将 `regionDefinitionsEnable` 对应值设为 `false`_
-> - _若机场订阅中不存在对应节点组的节点，则该节点组不会显示_
-> - _未匹配节点组或未启用节点组的节点，将统一归类至 「其他节点」_
+  config['external-controller'] = '[::]:9090';
+  config['external-ui'] = 'ui';
+  config['external-ui-url'] = 'https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip';
 
-- `香港`
-- `日本`
-- `美国`
-- `新加坡`
-- `台湾省`
-- `低倍率节点`
-- `高倍率节点`
-- `其他节点`
+  config['profile'] = { 'store-selected': true, 'store-fake-ip': true };
 
-## 效果展示
+  config['hosts'] = {
+    'dns.alidns.com': ['223.5.5.5', '223.6.6.6'],
+    'doh.pub': ['1.12.12.12', '120.53.53.53'],
+    'dns.cloudflare.com': ['1.1.1.1', '1.0.0.1'],
+    'dns.google': ['8.8.8.8', '8.8.4.4'],
+    'services.googleapis.cn': ['services.googleapis.com'],
+  };
 
-- 客户端： [Bettbox](https://github.com/appshubcc/Bettbox)
+  config['ntp'] = {
+    enable: true,
+    'write-to-system': false,
+    server: 'ntp.aliyun.com',
+    port: 123,
+    interval: 60,
+    'dialer-proxy': 'direct' // 强制 NTP 直连防止代理超时阻断
+  };
 
-|                                                                                  |                                                                                  |                                                                                  |
-| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| ![img](https://raw.githubusercontent.com/AIsouler/MyClash/main/Image/IMG_1.webp) | ![img](https://raw.githubusercontent.com/AIsouler/MyClash/main/Image/IMG_2.webp) | ![img](https://raw.githubusercontent.com/AIsouler/MyClash/main/Image/IMG_3.webp) |
-| ![img](https://raw.githubusercontent.com/AIsouler/MyClash/main/Image/IMG_4.webp) | ![img](https://raw.githubusercontent.com/AIsouler/MyClash/main/Image/IMG_5.webp) | ![img](https://raw.githubusercontent.com/AIsouler/MyClash/main/Image/IMG_6.webp) |
+  config['tun'] = {
+    enable: true,
+    stack: 'system',
+    'auto-route': true,
+    'strict-route': true,
+    'auto-redirect': true,
+    'auto-detect-interface': true,
+    'dns-hijack': ['udp://any:53', 'tcp://any:53'],
+  };
 
-## 致谢
+  config['rules'] = [
+    ...finalRules,
+    'RULE-SET,gfw,默认代理',
+    'RULE-SET,cn_additional,直连',
+    'RULE-SET,cn,直连', // 核心修复：国内规则链缝合
+    'RULE-SET,cn_ip,直连',
+    'MATCH,默认代理',
+  ];
 
-感谢以下项目以及所有上游项目
-
-- [dahaha-365/YaNet](https://github.com/dahaha-365/YaNet/blob/main/Mihomo/global_script.js)
-
-- [YiXuanZX/rules](https://github.com/YiXuanZX/rules)
-
-- [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat)
-
-- [wwqgtxx/clash-rules](https://github.com/wwqgtxx/clash-rules)
-
-- [217heidai/adblockfilters](https://github.com/217heidai/adblockfilters)
-
-- [Koolson/Qure](https://github.com/Koolson/Qure)
+  return config;
+}
